@@ -8,8 +8,6 @@ Una vez activado GitHub Pages:
 
 > https://susanaoubina.github.io/enigma/simulador-enigma-educativo.html
 
-(Si copias el archivo como `index.html`, la dirección se simplifica a `https://susanaoubina.github.io/enigma/`.)
-
 ## ✨ Características
 
 - **Cableado histórico real** de los rotores I–V, la rueda de entrada (ETW) y los reflectores B y C.
