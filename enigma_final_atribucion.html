@@ -1,0 +1,1301 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Máquina Enigma I — Simulador didáctico</title>
+<!--
+  ============================================================================
+  SIMULADOR DE LA MÁQUINA ENIGMA I (Wehrmacht) — 3 rotores + reflector + clavijero
+  ----------------------------------------------------------------------------
+  Archivo único y autónomo (HTML + CSS + JS). Funciona sin conexión.
+  Autor: material educativo para el aula de Tecnología.
+
+  Estructura del código:
+    1) DATOS HISTÓRICOS  -> cableados reales de rotores, reflectores y muescas
+    2) MOTOR DE CIFRADO  -> lógica eléctrica recíproca + double-stepping
+    3) INTERFAZ (CSS)    -> estética de madera/baquelita, teclas y lámparas
+    4) CONTROL (JS UI)   -> teclado, lámparas, clavijero, rotores, recorrido
+  Todo está comentado en español para poder revisarlo o modificarlo en clase.
+  ============================================================================
+-->
+<style>
+  /* ---------- 3) INTERFAZ: paleta y estética Enigma ---------- */
+  :root{
+    --madera:#2b1d12;          /* caja de madera oscura */
+    --madera2:#3a2717;
+    --baquelita:#161210;        /* baquelita casi negra */
+    --panel:#241a12;
+    --laton:#c9a24b;            /* latón / dorado */
+    --laton2:#e7c877;
+    --tecla:#2f2a26;
+    --tecla-borde:#0c0a08;
+    --lampara-off:#4a4436;
+    --lampara-on:#ffdf6b;       /* bombilla incandescente cálida */
+    --texto:#f3e7cf;
+    --texto2:#c9b48f;
+    --corriente:#ff5b3a;        /* color de la corriente eléctrica */
+    --ok:#7fd18a;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+    color:var(--texto);
+    background:
+      radial-gradient(circle at 30% 0%, #4a3320 0%, #221609 55%, #140d06 100%);
+    min-height:100vh;
+    padding:14px;
+  }
+  h1{
+    font-size:clamp(20px,3vw,30px);
+    margin:0 0 2px;
+    letter-spacing:1px;
+    color:var(--laton2);
+    text-shadow:0 2px 3px #000;
+  }
+  .sub{color:var(--texto2);font-size:13px;margin-bottom:12px;}
+  .maquina{
+    max-width:1180px;margin:0 auto;
+    background:linear-gradient(160deg,var(--madera2),var(--madera));
+    border:3px solid #0d0904;
+    border-radius:16px;
+    box-shadow:0 18px 50px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,220,150,.08);
+    padding:16px;
+  }
+  /* tornillos decorativos en las esquinas */
+  .tornillo{
+    position:absolute;width:14px;height:14px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,var(--laton2),#6b4e1c 70%,#000);
+    box-shadow:0 1px 2px #000;
+  }
+  .bloque{
+    position:relative;
+    background:var(--panel);
+    border:2px solid #0c0803;
+    border-radius:12px;
+    padding:14px;
+    margin:12px 0;
+    box-shadow:inset 0 2px 10px rgba(0,0,0,.5);
+  }
+  .bloque > .tornillo:nth-child(1){top:6px;left:6px;}
+  .bloque > .tornillo:nth-child(2){top:6px;right:6px;}
+  .bloque > .tornillo:nth-child(3){bottom:6px;left:6px;}
+  .bloque > .tornillo:nth-child(4){bottom:6px;right:6px;}
+  .titulo-bloque{
+    font-size:13px;text-transform:uppercase;letter-spacing:2px;
+    color:var(--laton);margin:0 0 10px;font-weight:700;
+  }
+  .titulo-bloque small{color:var(--texto2);text-transform:none;letter-spacing:0;font-weight:400;}
+
+  /* ---------- Rotores / ventanillas ---------- */
+  .rotores{display:flex;gap:14px;align-items:stretch;justify-content:center;flex-wrap:wrap;}
+  .reflector-caja{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:linear-gradient(180deg,#1c1c22,#0c0c10);
+    border:2px solid var(--laton);border-radius:10px;padding:10px 12px;min-width:78px;
+  }
+  .reflector-caja .glifo{font-size:26px;color:var(--laton2);}
+  .rotor-unidad{
+    display:flex;flex-direction:column;align-items:center;gap:6px;
+    background:linear-gradient(180deg,#3a342c,#211c16);
+    border:2px solid #100c07;border-radius:10px;padding:10px;min-width:104px;
+    box-shadow:inset 0 0 12px rgba(0,0,0,.6);
+  }
+  .rotor-unidad .etq{font-size:11px;color:var(--texto2);}
+  .ventanilla{
+    width:64px;height:88px;overflow:hidden;position:relative;
+    background:#0d0b08;border-radius:8px;border:2px solid var(--laton);
+    box-shadow:inset 0 0 14px #000;
+  }
+  .tambor{position:absolute;left:0;width:100%;transition:transform .18s cubic-bezier(.3,.8,.4,1);}
+  .tambor.rapido{transition:transform .07s linear;}
+  .tambor.instant{transition:none;}
+  .tambor .letra{
+    height:88px;display:flex;align-items:center;justify-content:center;
+    font-size:40px;font-weight:700;color:var(--laton2);
+    font-family:"Courier New",monospace;
+    text-shadow:0 0 8px rgba(231,200,119,.4);
+  }
+  .tambor .letra.centro{color:#fff;}
+  .ventanilla:after{ /* franja central que marca la letra activa */
+    content:"";position:absolute;left:0;right:0;top:29px;height:30px;
+    border-top:1px solid rgba(255,220,120,.5);border-bottom:1px solid rgba(255,220,120,.5);
+    pointer-events:none;
+  }
+  .flecha-avance{font-size:11px;color:var(--corriente);height:14px;}
+  /* Botones para GIRAR el rotor a mano y fijar la posición inicial (como los alemanes) */
+  .giro-btns{display:flex;gap:6px;}
+  .giro-btns button{
+    width:30px;height:24px;border-radius:6px;cursor:pointer;
+    background:linear-gradient(180deg,#4a4038,#241c14);
+    border:1px solid var(--laton);color:var(--laton2);font-size:13px;font-weight:700;
+    box-shadow:inset 0 1px 0 rgba(255,220,150,.15);line-height:1;
+  }
+  .giro-btns button:hover{filter:brightness(1.2);}
+  .giro-btns button:active{transform:translateY(1px);}
+
+  /* ---------- Lámparas ---------- */
+  .filas{display:flex;flex-direction:column;gap:8px;align-items:center;}
+  .fila{display:flex;gap:8px;justify-content:center;}
+  .lampara{
+    width:42px;height:42px;border-radius:50%;
+    background:radial-gradient(circle at 40% 35%,#5a5340,var(--lampara-off));
+    border:2px solid #0c0a06;
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700;color:#201c12;font-size:17px;
+    box-shadow:inset 0 -2px 4px rgba(0,0,0,.5);
+    transition:background .05s, box-shadow .05s, color .05s;
+    user-select:none;
+  }
+  .lampara.on{
+    background:radial-gradient(circle at 40% 35%,#fff6c9,var(--lampara-on));
+    color:#7a5a00;
+    box-shadow:0 0 6px 2px var(--lampara-on),0 0 22px 8px rgba(255,210,90,.7),inset 0 0 8px #fff3b0;
+  }
+
+  /* ---------- Teclado ---------- */
+  .tecla{
+    width:44px;height:44px;border-radius:50%;
+    background:radial-gradient(circle at 40% 30%,#54504a,var(--tecla));
+    border:2px solid var(--tecla-borde);
+    color:var(--texto);font-weight:700;font-size:17px;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+    box-shadow:0 3px 0 #000, inset 0 1px 2px rgba(255,255,255,.15);
+    user-select:none;transition:transform .05s, box-shadow .05s;
+  }
+  .tecla:active,.tecla.pulsada{
+    transform:translateY(3px);
+    box-shadow:0 0 0 #000, inset 0 2px 6px rgba(0,0,0,.6);
+    background:radial-gradient(circle at 40% 30%,#6a6459,#3a352f);
+  }
+
+  /* ---------- Clavijero (Steckerbrett) ---------- */
+  .clavijero-wrap{position:relative;}
+  #cablesSVG{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;}
+  .clavija{
+    width:40px;height:52px;border-radius:6px;
+    background:linear-gradient(180deg,#2c2620,#151009);
+    border:1px solid #000;display:flex;flex-direction:column;align-items:center;
+    justify-content:space-between;padding:3px 0;cursor:pointer;position:relative;z-index:2;
+    user-select:none;
+  }
+  .clavija .cl-letra{font-size:12px;color:var(--texto2);font-weight:700;}
+  .clavija .hoyo{width:9px;height:9px;border-radius:50%;background:#000;
+    box-shadow:inset 0 0 3px #000, 0 0 0 2px #3a2f1e;}
+  .clavija .par{display:flex;gap:5px;}
+  .clavija.seleccionada{outline:2px solid var(--laton2);outline-offset:1px;}
+  .clavija.conectada .hoyo{background:var(--laton2);box-shadow:0 0 5px var(--laton2);}
+
+  /* ---------- Recorrido eléctrico (esquema) ---------- */
+  #esquema{width:100%;height:auto;display:block;background:#0d0b07;border-radius:8px;}
+  .leyenda-esq{font-size:11px;color:var(--texto2);margin-top:6px;}
+
+  /* ---------- Panel de configuración ---------- */
+  .config-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;}
+  .campo{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--texto2);}
+  select,input[type=text]{
+    background:#0e0b07;color:var(--texto);border:1px solid var(--laton);
+    border-radius:6px;padding:6px;font-size:14px;font-family:inherit;
+  }
+  .rotor-config{display:flex;gap:8px;flex-wrap:wrap;}
+  .rotor-config .col{flex:1;min-width:120px;background:#191209;border:1px solid #3a2c14;
+    border-radius:8px;padding:8px;}
+  .rotor-config .col h4{margin:0 0 6px;color:var(--laton);font-size:12px;}
+
+  /* ---------- Cajas de texto ---------- */
+  .io{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .io .campo textarea{
+    width:100%;min-height:70px;resize:vertical;background:#0e0b07;color:var(--texto);
+    border:1px solid var(--laton);border-radius:6px;padding:8px;font-size:16px;
+    font-family:"Courier New",monospace;letter-spacing:2px;
+  }
+  #salida{color:var(--ok);}
+
+  /* ---------- Botones y controles ---------- */
+  .controles{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:6px;}
+  button.btn{
+    background:linear-gradient(180deg,var(--laton2),var(--laton));
+    color:#241704;border:1px solid #6b4e1c;border-radius:8px;
+    padding:9px 14px;font-weight:700;cursor:pointer;font-size:14px;
+    box-shadow:0 2px 0 #5a4014;
+  }
+  button.btn:hover{filter:brightness(1.08);}
+  button.btn:active{transform:translateY(2px);box-shadow:none;}
+  button.btn.sec{background:#2a2118;color:var(--texto);border-color:#4a3a20;box-shadow:0 2px 0 #120d07;}
+  .velocidad{display:flex;gap:4px;align-items:center;background:#1a130a;border:1px solid #3a2c14;
+    border-radius:8px;padding:4px 8px;}
+  .velocidad button{background:#2a2118;color:var(--texto);border:1px solid #4a3a20;border-radius:6px;
+    padding:5px 9px;cursor:pointer;font-size:12px;}
+  .velocidad button.activo{background:var(--laton);color:#241704;font-weight:700;}
+
+  /* ---------- Panel didáctico ---------- */
+  /* ---------- Tutorial / misión guiada ---------- */
+  .tutorial{border:2px solid var(--laton);}
+  .tut-cab{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+  .tut-progreso{font-size:12px;color:var(--texto2);}
+  .tut-barra{height:8px;background:#0e0b07;border-radius:5px;overflow:hidden;border:1px solid #3a2c14;margin:8px 0;}
+  .tut-barra i{display:block;height:100%;background:linear-gradient(90deg,var(--laton),var(--laton2));width:0;transition:width .3s;}
+  .tut-fase{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:700;letter-spacing:1px;}
+  .fase-emisor{background:#3a2a12;color:var(--laton2);}
+  .fase-receptor{background:#12263a;color:#8fc7ff;}
+  .fase-final{background:#123a1e;color:var(--ok);}
+  .tut-titulo{font-size:16px;color:var(--laton2);margin:8px 0 4px;font-weight:700;}
+  .tut-texto{font-size:14px;line-height:1.55;color:var(--texto);}
+  .tut-texto b{color:var(--laton2);}
+  .tut-dato{font-family:"Courier New",monospace;background:#0e0b07;border:1px solid #3a2c14;border-radius:5px;padding:1px 6px;color:#ffe08a;font-weight:700;letter-spacing:1px;}
+  .tut-resultado{margin-top:10px;background:#0e0b07;border:1px dashed var(--laton);border-radius:8px;padding:10px;font-family:"Courier New",monospace;color:var(--ok);white-space:pre-wrap;min-height:20px;font-size:14px;}
+  .tut-nav{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center;}
+  details.didactico{margin-top:12px;background:#1a130a;border:1px solid #3a2c14;border-radius:10px;padding:10px 14px;}
+  details.didactico summary{cursor:pointer;color:var(--laton2);font-weight:700;font-size:14px;}
+  details.didactico p{color:var(--texto2);font-size:13px;line-height:1.5;}
+  details.didactico b{color:var(--texto);}
+  .aviso{color:var(--corriente);font-size:12px;min-height:16px;margin-top:4px;}
+  .creditos{margin-top:16px;padding-top:12px;border-top:1px solid #3a2c14;text-align:center;
+    font-size:12px;color:var(--texto2);letter-spacing:.3px;}
+  .creditos b{color:var(--laton2);}
+  @media(max-width:640px){ .io{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="maquina">
+  <h1>Máquina Enigma I — Simulador didáctico</h1>
+  <div class="sub">Enigma militar alemana · 3 rotores (Walzen) + reflector (Umkehrwalze) + clavijero (Steckerbrett) · Funciona sin conexión</div>
+
+  <!-- ======================= TUTORIAL / MISIÓN GUIADA ======================= -->
+  <div class="bloque tutorial" id="tutorialBox">
+    <span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span>
+    <div class="tut-cab">
+      <div class="titulo-bloque" style="margin:0">🎖️ Misión: Criptógrafo de la Wehrmacht (1939)</div>
+      <div class="tut-progreso"><span id="tutFase" class="tut-fase fase-emisor">EMISOR</span> &nbsp; Paso <b id="tutNum">1</b>/<span id="tutTotal">12</span></div>
+    </div>
+    <div class="tut-barra"><i id="tutBarra"></i></div>
+    <div class="tut-titulo" id="tutTitulo"></div>
+    <div class="tut-texto" id="tutTexto"></div>
+    <div class="tut-resultado" id="tutResultado" style="display:none"></div>
+    <div class="tut-nav">
+      <button class="btn sec" id="tutPrev">◀ Anterior</button>
+      <button class="btn" id="tutAccion" style="display:none"></button>
+      <button class="btn" id="tutNext">Siguiente ▶</button>
+      <button class="btn sec" id="tutReiniciar">↺ Empezar de nuevo</button>
+    </div>
+  </div>
+
+  <!-- ======================= ROTORES ======================= -->
+  <div class="bloque">
+    <span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span>
+    <div class="titulo-bloque">Rotores y reflector <small>— ventanillas (Walzen · Umkehrwalze). Gira cada rotor con ▲/▼ para elegir la POSICIÓN INICIAL (Grundstellung) antes de empezar, como hacían los operadores alemanes.</small></div>
+    <div class="rotores" id="rotores">
+      <div class="reflector-caja">
+        <div class="etq" style="font-size:11px;color:var(--texto2)">Reflector</div>
+        <div class="glifo">◄</div>
+        <div class="etq" id="etqReflector">UKW-B</div>
+      </div>
+      <!-- Las 3 unidades de rotor se generan por JS: izquierdo, central, derecho -->
+    </div>
+  </div>
+
+  <!-- ======================= LÁMPARAS ======================= -->
+  <div class="bloque">
+    <span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span>
+    <div class="titulo-bloque">Panel de lámparas <small>— (Lampenfeld) se ilumina la letra cifrada</small></div>
+    <div class="filas" id="lamparas"></div>
+  </div>
+
+  <!-- ======================= TECLADO ======================= -->
+  <div class="bloque">
+    <span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span>
+    <div class="titulo-bloque">Teclado <small>— (Tastatur) distribución alemana QWERTZ · pulsa con el ratón o con tu teclado</small></div>
+    <div class="filas" id="teclado"></div>
+  </div>
+
+  <!-- ======================= RECORRIDO ELÉCTRICO ======================= -->
+  <div class="bloque">
+    <span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span>
+    <div class="titulo-bloque">Recorrido de la corriente <small>— el camino eléctrico completo y recíproco</small></div>
+    <svg id="esquema" viewBox="0 0 1120 340" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="leyenda-esq">La corriente entra por el clavijero, atraviesa la rueda de entrada (ETW) y los tres rotores, rebota en el reflector y vuelve por el mismo camino hasta encender la lámpara.</div>
+  </div>
+
+  <!-- ======================= CLAVIJERO ======================= -->
+  <div class="bloque">
+    <span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span>
+    <div class="titulo-bloque">Clavijero <small>— (Steckerbrett) haz clic en dos letras para unirlas con un cable (máx. 10 pares)</small></div>
+    <div class="clavijero-wrap">
+      <svg id="cablesSVG" viewBox="0 0 1120 130" preserveAspectRatio="none"></svg>
+      <div class="filas" id="clavijero"></div>
+    </div>
+    <div class="aviso" id="avisoClavijero"></div>
+  </div>
+
+  <!-- ======================= CONFIGURACIÓN ======================= -->
+  <div class="bloque">
+    <span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span>
+    <div class="titulo-bloque">Configuración (Schlüssel) <small>— elige 3 rotores de 5 y ordénalos (60 combinaciones). No se puede repetir rotor: si eliges uno ya usado, se intercambian.</small></div>
+    <div class="rotor-config" id="rotorConfig"></div>
+    <div class="aviso" id="avisoRotores" style="color:var(--laton2)"></div>
+    <div class="config-grid" style="margin-top:10px">
+      <label class="campo">Reflector (Umkehrwalze)
+        <select id="selReflector">
+          <option value="B">Reflector B (UKW-B)</option>
+          <option value="C">Reflector C (UKW-C)</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <!-- ======================= CLAVE DEL DÍA (Tagesschlüssel) ======================= -->
+  <div class="bloque">
+    <span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span>
+    <div class="titulo-bloque">Clave del día <small>— (Tagesschlüssel) de la hoja mensual: qué 3 rotores y en qué orden, los anillos (Ringstellung), el reflector y los cables del clavijero. Fija para todo el día. NO incluye la posición inicial.</small></div>
+    <div class="controles" style="margin-top:0">
+      <button class="btn" id="btnGenerarClave">🎲 Generar clave del día</button>
+      <button class="btn sec" id="btnAplicarClave">Aplicar la clave escrita</button>
+      <button class="btn sec" id="btnLeerClave">Leer la clave actual de la máquina</button>
+    </div>
+    <label class="campo" style="margin-top:10px">Clave del día (puedes copiarla, guardarla o escribir una a mano y aplicarla)
+      <textarea id="claveTexto" style="min-height:56px" placeholder="Ej: Rotores: II I V; Anillos: BQR; Reflector: B; Clavijero: AM FI NV KP LO QT ZS DG WH JB"></textarea>
+    </label>
+    <div class="aviso" id="avisoClave"></div>
+
+    <!-- Clave de MENSAJE: la elegía el operador para CADA mensaje -->
+    <div style="margin-top:14px;border-top:1px solid #3a2c14;padding-top:12px">
+      <div class="titulo-bloque" style="margin-bottom:6px">Clave del mensaje <small>— (Spruchschlüssel) la posición inicial de los 3 rotores, elegida por el operador para cada mensaje</small></div>
+      <div class="controles" style="margin-top:0;align-items:flex-end">
+        <label class="campo" style="max-width:170px">3 letras (izq · cen · der)
+          <input type="text" id="spruchInput" maxlength="3" placeholder="Ej: RDC" style="text-transform:uppercase;letter-spacing:6px;font-family:'Courier New',monospace;font-size:18px;text-align:center">
+        </label>
+        <button class="btn" id="btnEnclavar">Enclavar rotores</button>
+        <button class="btn sec" id="btnSpruchAzar">🎲 Al azar</button>
+      </div>
+      <div class="aviso" id="avisoSpruch" style="color:var(--texto2)">También puedes girar los rotores a mano con ▲/▼. Para descifrar, pon la misma clave de mensaje que se usó al cifrar.</div>
+    </div>
+  </div>
+
+  <!-- ======================= ENTRADA / SALIDA ======================= -->
+  <div class="bloque">
+    <span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span>
+    <div class="titulo-bloque">Texto</div>
+    <div class="io">
+      <label class="campo">Entrada <small style="color:var(--texto2)">(haz clic aquí y teclea: es el teclado de la máquina)</small>
+        <textarea id="entrada" readonly placeholder="Haz clic aquí y teclea con tu teclado..."></textarea>
+      </label>
+      <label class="campo">Salida (cifrado / descifrado)
+        <textarea id="salida" readonly placeholder="Resultado letra a letra..."></textarea>
+      </label>
+    </div>
+    <div class="controles">
+      <div class="velocidad" title="Velocidad de la animación del recorrido">
+        <span style="font-size:12px;color:var(--texto2)">Velocidad:</span>
+        <button data-vel="lento">Lento</button>
+        <button data-vel="normal" class="activo">Normal</button>
+        <button data-vel="rapido">Rápido</button>
+      </div>
+      <button class="btn" id="btnDemo">▶ Modo demostración</button>
+      <button class="btn" id="btnReiniciarTodo" style="background:linear-gradient(180deg,#e0a3a3,#c46a6a);box-shadow:0 2px 0 #7a3a3a">⟳ Reiniciar todo</button>
+      <button class="btn sec" id="btnReiniciarPos">↺ Reiniciar posiciones</button>
+      <button class="btn sec" id="btnLimpiarTexto">Limpiar texto</button>
+      <button class="btn sec" id="btnBorrarRecorrido">Borrar recorrido</button>
+      <button class="btn sec" id="btnAutotest">Autocomprobación (AAAAA→BDZGO)</button>
+    </div>
+    <div class="aviso" id="avisoTest"></div>
+  </div>
+
+  <!-- ======================= MENSAJE COMPLETO (cifrar / descifrar) ======================= -->
+  <div class="bloque">
+    <span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span>
+    <div class="titulo-bloque">Cifrar / Descifrar un mensaje completo <small>— la misma clave y máquina sirven para las dos cosas (gracias al reflector)</small></div>
+    <div class="io">
+      <label class="campo">Mensaje (texto claro o cifrado)
+        <textarea id="msgEntrada" placeholder="Escribe o pega aquí el mensaje..."></textarea>
+      </label>
+      <label class="campo">Resultado
+        <textarea id="msgSalida" readonly placeholder="Resultado del proceso..."></textarea>
+      </label>
+    </div>
+    <div class="controles" style="margin-top:0">
+      <label class="campo" style="max-width:230px">Números al preparar
+        <select id="selNumIdioma">
+          <option value="de">Alemán histórico (EINS, ZWEI…)</option>
+          <option value="es">Español (UNO, DOS…)</option>
+        </select>
+      </label>
+      <button class="btn sec" id="btnPreparar">✍ Preparar texto (números y signos → Enigma)</button>
+      <button class="btn sec" id="btnInterpretar">Leer resultado (X → espacio)</button>
+    </div>
+    <div class="controles">
+      <button class="btn" id="btnProcesar">⚙ Procesar con la clave actual</button>
+      <button class="btn sec" id="btnDemoDescifrar">🔁 Demostrar descifrado (ida y vuelta)</button>
+    </div>
+    <div class="aviso" id="avisoMsg" style="color:var(--texto2)">El proceso empieza siempre desde la posición inicial (Grundstellung) de la clave. Para descifrar, aplica la misma clave y procesa el texto cifrado.</div>
+  </div>
+
+  <!-- ======================= PANEL DIDÁCTICO ======================= -->
+  <details class="didactico">
+    <summary>📖 Explicación didáctica de cada parte</summary>
+    <p><b>Teclado (Tastatur):</b> al pulsar una tecla se cierra un circuito eléctrico. La Enigma no tiene la letra que tecleas: en su lugar enciende otra letra distinta.</p>
+    <p><b>Clavijero (Steckerbrett):</b> intercambia parejas de letras antes de entrar a los rotores y otra vez al salir. Con 10 cables aumenta enormemente el número de combinaciones. Es recíproco: si A↔B, entonces B↔A.</p>
+    <p><b>Rueda de entrada (ETW):</b> en la Enigma militar conecta el teclado con el primer rotor en orden directo (A→A, B→B...).</p>
+    <p><b>Rotores (Walzen):</b> cada rotor es un cifrado por sustitución que además <b>gira</b>. El de la derecha avanza una posición antes de cada letra. Cuando llega a su muesca (Kerbe) arrastra al siguiente. El <b>Ringstellung</b> desplaza el anillo alfabético respecto al cableado interno.</p>
+    <p><b>Doble paso (double-stepping):</b> anomalía mecánica real. Cuando el rotor central está sobre su muesca, en el siguiente paso avanzan a la vez el central y el izquierdo.</p>
+    <p><b>Reflector (Umkehrwalze):</b> devuelve la corriente por un camino distinto. Gracias a él, cifrar y descifrar es la misma operación con los mismos ajustes. Como efecto colateral, <b>ninguna letra se cifra en sí misma</b>, debilidad que ayudó a los criptógrafos aliados.</p>
+    <p><b>Dos niveles de clave.</b> La <b>clave del día (Tagesschlüssel)</b> venía en una hoja mensual e indicaba, para cada día: qué 3 rotores usar y en qué orden (3 de 5 → 60 combinaciones), el Ringstellung, el reflector y los cables del clavijero. Era fija para todo el día. Para <b>cada mensaje</b>, el operador elegía además una <b>clave del mensaje (Spruchschlüssel)</b>: tres letras con la posición inicial de los rotores (p. ej. <b>RDC</b> = izquierdo en R, central en D, derecho en C).</p>
+    <p><b>Números y signos.</b> La Enigma solo tenía 26 letras: sin cifras, espacios ni puntuación. Los números se <b>deletreaban</b> como palabras (EINS, ZWEI, DREI…), la <b>X</b> servía de separador y de punto, la <b>Y</b> de coma, y los caracteres especiales se transliteraban (Ä→AE, Ö→OE, Ü→UE, ß→SS). Así, "Berlín 9:15h" se convertía en algo como <b>BERLINXNEUNXUHRXEINSXFUENF</b>. Usa el botón «Preparar texto» para verlo. Curiosidad: la palabra EINS era tan frecuente que en Bletchley Park crearon un catálogo para buscarla y usarla como vía de entrada.</p>
+    <p><b>El error que rompió Enigma.</b> Hasta mayo de 1940, el operador ciframba la clave del mensaje <b>dos veces seguidas</b> (RDC → RDCRDC) al principio. Como los rotores giran entre letra y letra, esa repetición no se veía en el texto transmitido (podía salir p. ej. PKJXYZ), pero la letra 1 y la 4 procedían de la misma letra, igual que la 2 con la 5 y la 3 con la 6. Reuniendo muchos mensajes del día, Marian Rejewski y el equipo polaco hallaban esas relaciones ocultas («cadenas») y deducían la configuración. La repetición del indicador fue la grieta decisiva.</p>
+    <p><b>Cómo usarlo en clase:</b> configura rotores I-II-III, reflector B, anillos AAA y posición AAA. Teclea <b>AAAAA</b>: debe salir <b>BDZGO</b>. Vuelve a poner la posición AAA y teclea BDZGO: recuperarás AAAAA. Con el bloque «Cifrar / Descifrar un mensaje completo» puedes ver la ida y la vuelta de golpe: la misma clave cifra y descifra.</p>
+  </details>
+
+  <!-- ======================= PIE / CRÉDITOS ======================= -->
+  <div class="creditos">
+    Creado por <b>Susana Oubiña Falcón</b> con ayuda de Claude · Material educativo para el aula de Tecnología
+  </div>
+</div>
+
+<script>
+/* ============================================================================
+   1) DATOS HISTÓRICOS — cableados reales de la Enigma I (no inventados)
+   ============================================================================ */
+const ALFA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const ord = c => c.charCodeAt(0) - 65;         // 'A'->0 ... 'Z'->25
+const chr = n => String.fromCharCode(((n%26)+26)%26 + 65);
+
+// Cableado de cada rotor y letra de la muesca (Kerbe) que provoca el arrastre
+const ROTORES = {
+  I:   {w:"EKMFLGDQVZNTOWYHXUSPAIBRCJ", muesca:"Q"},
+  II:  {w:"AJDKSIRUXBLHWTMCQGZNPYFVOE", muesca:"E"},
+  III: {w:"BDFHJLCPRTXVZNYEIWGAKMUSQO", muesca:"V"},
+  IV:  {w:"ESOVPZJAYQUIRHXLNFTGKDCMWB", muesca:"J"},
+  V:   {w:"VZBRGITYUPSDNHLXAWMJQOFECK", muesca:"Z"},
+};
+// Rueda de entrada (ETW) del modelo militar: orden directo
+const ETW = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+// Reflectores
+const REFLECTORES = {
+  B:"YRUHQSLDPXNGOKMIEBFZCWVJAT",
+  C:"FVPJIAOYEDRZXWGCTKUQSBNMHL",
+};
+// Distribución física alemana QWERTZ (3 filas) para teclado, lámparas y clavijero
+const QWERTZ = ["QWERTZUIO","ASDFGHJK","PYXCVBNML"];
+
+/* ============================================================================
+   2) MOTOR DE CIFRADO — idéntico al verificado (AAAAA -> BDZGO)
+   ============================================================================ */
+// Crea un rotor "vivo" con su posición (Grundstellung) y anillo (Ringstellung)
+function crearRotor(nombre, ring, pos){
+  const w = ROTORES[nombre].w;
+  const fwd = [...w].map(ord);         // cableado directo
+  const inv = new Array(26);           // cableado inverso (para la vuelta)
+  for(let i=0;i<26;i++) inv[fwd[i]] = i;
+  return {
+    nombre,
+    ring: ord(ring),                   // desplazamiento del anillo
+    pos:  ord(pos),                    // posición actual (rotación)
+    fwd, inv,
+    muesca: ord(ROTORES[nombre].muesca)
+  };
+}
+// Paso por un rotor teniendo en cuenta rotación (pos) y anillo (ring)
+function pasoFwd(r,c){
+  const s = r.pos - r.ring;
+  let x = ((c+s)%26+26)%26;
+  x = r.fwd[x];
+  return ((x-s)%26+26)%26;
+}
+function pasoBwd(r,c){
+  const s = r.pos - r.ring;
+  let x = ((c+s)%26+26)%26;
+  x = r.inv[x];
+  return ((x-s)%26+26)%26;
+}
+// Mecanismo de avance con DOBLE PASO. rotores = [izquierdo, central, derecho]
+function avanzar(rotores){
+  const [izq,cen,der] = rotores;
+  const cenEnMuesca = cen.pos === cen.muesca;
+  const derEnMuesca = der.pos === der.muesca;
+  const movidos = {izq:false,cen:false,der:true};   // el derecho siempre avanza
+  if(cenEnMuesca){                                    // doble paso: central + izquierdo
+    cen.pos=(cen.pos+1)%26; izq.pos=(izq.pos+1)%26;
+    movidos.cen=true; movidos.izq=true;
+  } else if(derEnMuesca){                             // el derecho arrastra al central
+    cen.pos=(cen.pos+1)%26; movidos.cen=true;
+  }
+  der.pos=(der.pos+1)%26;
+  return movidos;                                    // para animar solo lo que gira
+}
+// Cifra una letra y devuelve {salida, rails} donde rails son los contactos
+// en cada etapa (para dibujar el recorrido eléctrico).
+function cifrarLetra(c, rotores, reflector, plug){
+  const [izq,cen,der] = rotores;
+  let x = ord(c);
+  const rails = [];
+  rails.push(x);            // 0 teclado
+  x = plug[x];  rails.push(x);   // 1 tras clavijero
+  x = x;        rails.push(x);   // 2 ETW (directo)
+  x = pasoFwd(der,x); rails.push(x);  // 3 rotor derecho
+  x = pasoFwd(cen,x); rails.push(x);  // 4 rotor central
+  x = pasoFwd(izq,x); rails.push(x);  // 5 rotor izquierdo
+  x = ord(reflector[x]); rails.push(x);// 6 reflector
+  x = pasoBwd(izq,x); rails.push(x);  // 7 vuelta rotor izquierdo
+  x = pasoBwd(cen,x); rails.push(x);  // 8 vuelta rotor central
+  x = pasoBwd(der,x); rails.push(x);  // 9 vuelta rotor derecho
+  x = x;        rails.push(x);   // 10 ETW
+  x = plug[x];  rails.push(x);   // 11 clavijero -> lámpara
+  return {salida:chr(x), rails};
+}
+
+/* ============================================================================
+   ESTADO GLOBAL de la interfaz
+   ============================================================================ */
+const estado = {
+  rotores:["I","II","III"],   // izquierdo, central, derecho
+  rings:["A","A","A"],
+  grund:["A","A","A"],        // Grundstellung (posición inicial)
+  pos:[0,0,0],                // posición actual en curso
+  reflector:"B",
+  plugPares:[],               // pares del clavijero [["A","B"],...]
+  velocidad:"normal",
+  animando:false,
+};
+const VELOCIDADES = {lento:420, normal:170, rapido:55};
+
+// Construye el vector de permutación del clavijero a partir de los pares
+function construirPlug(){
+  const plug=[...Array(26).keys()];
+  estado.plugPares.forEach(([a,b])=>{plug[ord(a)]=ord(b); plug[ord(b)]=ord(a);});
+  return plug;
+}
+// Devuelve los 3 rotores "vivos" con la posición ACTUAL
+function rotoresVivos(){
+  return [
+    Object.assign(crearRotor(estado.rotores[0],estado.rings[0],"A"),{pos:estado.pos[0]}),
+    Object.assign(crearRotor(estado.rotores[1],estado.rings[1],"A"),{pos:estado.pos[1]}),
+    Object.assign(crearRotor(estado.rotores[2],estado.rings[2],"A"),{pos:estado.pos[2]}),
+  ];
+}
+
+/* ============================================================================
+   4) CONTROL DE LA INTERFAZ
+   ============================================================================ */
+const $ = s => document.querySelector(s);
+const lamparasEl = $("#lamparas");
+const tecladoEl  = $("#teclado");
+const clavijeroEl= $("#clavijero");
+const rotoresEl  = $("#rotores");
+
+// --- Construir LÁMPARAS y TECLADO en distribución QWERTZ ---
+function construirFilas(contenedor, claseItem, factoria){
+  contenedor.innerHTML="";
+  QWERTZ.forEach((fila,i)=>{
+    const div=document.createElement("div"); div.className="fila";
+    // pequeña sangría para escalonar las filas como el teclado real
+    div.style.paddingLeft=(i*14)+"px";
+    [...fila].forEach(l=>div.appendChild(factoria(l)));
+    contenedor.appendChild(div);
+  });
+}
+construirFilas(lamparasEl,"lampara",l=>{
+  const d=document.createElement("div"); d.className="lampara"; d.textContent=l; d.dataset.l=l; return d;
+});
+construirFilas(tecladoEl,"tecla",l=>{
+  const d=document.createElement("div"); d.className="tecla"; d.textContent=l; d.dataset.l=l;
+  d.addEventListener("click",()=>procesarTecla(l));
+  return d;
+});
+
+// --- Construir CLAVIJERO ---
+let claviSeleccion=null;
+function construirClavijero(){
+  clavijeroEl.innerHTML="";
+  QWERTZ.forEach((fila,i)=>{
+    const div=document.createElement("div"); div.className="fila";
+    div.style.paddingLeft=(i*14)+"px";
+    [...fila].forEach(l=>{
+      const c=document.createElement("div"); c.className="clavija"; c.dataset.l=l;
+      c.innerHTML=`<span class="cl-letra">${l}</span><span class="par"><span class="hoyo"></span><span class="hoyo"></span></span>`;
+      c.addEventListener("click",()=>clicClavija(l));
+      div.appendChild(c);
+    });
+    clavijeroEl.appendChild(div);
+  });
+  pintarClavijero();
+}
+function letraConectada(l){
+  const p=estado.plugPares.find(par=>par.includes(l));
+  return p ? p.find(x=>x!==l) : null;
+}
+function clicClavija(l){
+  $("#avisoClavijero").textContent="";
+  const yaPar=estado.plugPares.find(par=>par.includes(l));
+  if(yaPar){ // clic en una clavija ya conectada -> quitar cable
+    estado.plugPares=estado.plugPares.filter(par=>par!==yaPar);
+    claviSeleccion=null; pintarClavijero(); return;
+  }
+  if(claviSeleccion===null){ claviSeleccion=l; pintarClavijero(); return; }
+  if(claviSeleccion===l){ claviSeleccion=null; pintarClavijero(); return; }
+  if(estado.plugPares.length>=10){ $("#avisoClavijero").textContent="Máximo 10 cables en el clavijero."; claviSeleccion=null; pintarClavijero(); return; }
+  estado.plugPares.push([claviSeleccion,l]);
+  claviSeleccion=null; pintarClavijero();
+}
+function pintarClavijero(){
+  document.querySelectorAll(".clavija").forEach(c=>{
+    const l=c.dataset.l;
+    c.classList.toggle("conectada", !!letraConectada(l));
+    c.classList.toggle("seleccionada", claviSeleccion===l);
+  });
+  dibujarCables();
+}
+// Dibuja los cables uniendo clavijas con curvas
+function dibujarCables(){
+  const svg=$("#cablesSVG");
+  svg.innerHTML="";
+  const wrap=$(".clavijero-wrap").getBoundingClientRect();
+  svg.setAttribute("viewBox",`0 0 ${wrap.width} ${wrap.height}`);
+  const colores=["#e74c3c","#3498db","#2ecc71","#f1c40f","#9b59b6","#e67e22","#1abc9c","#ff7bd5","#95d5b2","#ffd166"];
+  estado.plugPares.forEach((par,idx)=>{
+    const a=document.querySelector(`.clavija[data-l="${par[0]}"]`);
+    const b=document.querySelector(`.clavija[data-l="${par[1]}"]`);
+    if(!a||!b) return;
+    const ra=a.getBoundingClientRect(), rb=b.getBoundingClientRect();
+    const ax=ra.left-wrap.left+ra.width/2, ay=ra.top-wrap.top+ra.height-6;
+    const bx=rb.left-wrap.left+rb.width/2, by=rb.top-wrap.top+rb.height-6;
+    const dip=Math.max(ay,by)+26+idx*4;   // los cables cuelgan un poco
+    const path=document.createElementNS("http://www.w3.org/2000/svg","path");
+    path.setAttribute("d",`M ${ax} ${ay} C ${ax} ${dip}, ${bx} ${dip}, ${bx} ${by}`);
+    path.setAttribute("stroke",colores[idx%colores.length]);
+    path.setAttribute("stroke-width","3.5"); path.setAttribute("fill","none");
+    path.setAttribute("stroke-linecap","round"); path.setAttribute("opacity","0.9");
+    svg.appendChild(path);
+  });
+}
+
+// --- Construir UNIDADES DE ROTOR (ventanillas) ---
+function construirRotores(){
+  // eliminar unidades previas (mantener la caja del reflector, que es el primer hijo)
+  [...rotoresEl.querySelectorAll(".rotor-unidad")].forEach(e=>e.remove());
+  const etiquetas=["Izquierdo","Central","Derecho"];
+  estado.rotores.forEach((nom,i)=>{
+    const u=document.createElement("div"); u.className="rotor-unidad"; u.dataset.i=i;
+    u.innerHTML=`
+      <div class="etq">${etiquetas[i]} · Rotor ${nom}</div>
+      <div class="giro-btns"><button data-giro="${i}" data-d="-1" title="Retroceder una letra (A→Z)">▲</button><button data-giro="${i}" data-d="1" title="Avanzar una letra (A→B)">▼</button></div>
+      <div class="ventanilla"><div class="tambor"></div></div>
+      <div class="flecha-avance" data-flecha="${i}"></div>`;
+    rotoresEl.appendChild(u);
+    pintarTambor(i,true);
+  });
+  // Botones ▲/▼ para girar cada rotor a mano y fijar la posición inicial
+  rotoresEl.querySelectorAll("[data-giro]").forEach(b=>b.addEventListener("click",()=>{
+    girarRotor(+b.dataset.giro, +b.dataset.d);
+  }));
+  $("#etqReflector").textContent="UKW-"+estado.reflector;
+}
+// Gira un rotor una posición (delta +1 / -1). Fija esa posición como Grundstellung
+// y la sincroniza con el selector del panel de configuración.
+function girarRotor(i, delta){
+  estado.pos[i]   = ((estado.pos[i]+delta)%26+26)%26;
+  estado.grund[i] = chr(estado.pos[i]);            // esta pasa a ser la posición inicial
+  // Giro manual con las flechas: repintamos al instante en la letra correcta
+  // (sin animación deslizante, para evitar cualquier ambigüedad de sentido).
+  pintarTambor(i,true);
+  const sel=document.querySelector(`[data-grund="${i}"]`);
+  if(sel) sel.value=estado.grund[i];               // reflejarlo en la configuración
+}
+// Dibuja el tambor mostrando letra anterior / actual / siguiente
+function pintarTambor(i, instant){
+  const u=rotoresEl.querySelector(`.rotor-unidad[data-i="${i}"]`);
+  if(!u) return;
+  const tambor=u.querySelector(".tambor");
+  const p=estado.pos[i];
+  const letras=[chr(p-1),chr(p),chr(p+1)];
+  tambor.classList.toggle("instant",!!instant);
+  tambor.style.transform="translateY(-88px)"; // colocamos el centro en la ventana
+  tambor.innerHTML=letras.map((l,k)=>`<div class="letra ${k===1?'centro':''}">${l}</div>`).join("");
+  if(instant){ requestAnimationFrame(()=>tambor.classList.remove("instant")); }
+}
+// Anima el giro de un rotor: muestra la letra nueva deslizando hacia arriba
+function animarGiro(i){
+  const u=rotoresEl.querySelector(`.rotor-unidad[data-i="${i}"]`);
+  if(!u) return;
+  const tambor=u.querySelector(".tambor");
+  const p=estado.pos[i];
+  // preparamos 4 letras (ant2, ant, actual, sig) y animamos un salto de una posición
+  const letras=[chr(p-2),chr(p-1),chr(p),chr(p+1)];
+  tambor.classList.add("instant");
+  tambor.innerHTML=letras.map((l,k)=>`<div class="letra ${k===2?'centro':''}">${l}</div>`).join("");
+  tambor.style.transform="translateY(-88px)";   // muestra la letra anterior centrada
+  tambor.classList.remove("instant");
+  tambor.classList.toggle("rapido",estado.velocidad==="rapido");
+  requestAnimationFrame(()=>{ tambor.style.transform="translateY(-176px)"; }); // desliza a la actual
+  const flecha=u.querySelector(".flecha-avance");
+  flecha.textContent="▲"; setTimeout(()=>flecha.textContent="",300);
+}
+
+/* ---------------- RECORRIDO ELÉCTRICO (esquema animado) ---------------- */
+const COLS = [
+  {x:40,  t:"Tecla"}, {x:135, t:"Clav."}, {x:230, t:"ETW"},
+  {x:325, t:"R.Der"}, {x:420, t:"R.Cen"}, {x:515, t:"R.Izq"},
+  {x:610, t:"Refl."}, {x:705, t:"R.Izq"}, {x:800, t:"R.Cen"},
+  {x:895, t:"R.Der"}, {x:985, t:"ETW"},  {x:1080, t:"Lámp."}
+];
+const ESQ_TOP=28, ESQ_STEP=10.6;   // geometría de los 26 puntos por columna
+function yDe(contacto){ return ESQ_TOP + contacto*ESQ_STEP; }
+
+function dibujarEsquemaBase(rails){
+  const svg=$("#esquema"); svg.innerHTML="";
+  const ns="http://www.w3.org/2000/svg";
+  // columnas de 26 puntos + etiqueta
+  COLS.forEach(col=>{
+    const t=document.createElementNS(ns,"text");
+    t.setAttribute("x",col.x); t.setAttribute("y",16); t.setAttribute("fill","#c9b48f");
+    t.setAttribute("font-size","11"); t.setAttribute("text-anchor","middle"); t.textContent=col.t;
+    svg.appendChild(t);
+    for(let c=0;c<26;c++){
+      const dot=document.createElementNS(ns,"circle");
+      dot.setAttribute("cx",col.x); dot.setAttribute("cy",yDe(c)); dot.setAttribute("r",2.4);
+      dot.setAttribute("fill","#544a33");
+      dot.dataset.key=col.x+"_"+c;
+      svg.appendChild(dot);
+    }
+  });
+  return svg;
+}
+// Contador que identifica cada animación. Al empezar una nueva, las anteriores
+// quedan "caducadas" y se detienen: así nunca se superponen dos recorridos.
+let animId=0;
+// Anima el trazo de la corriente a través de las 12 columnas
+function animarRecorrido(rails){
+  const miId=++animId;                 // este recorrido es el único válido ahora
+  const svg=dibujarEsquemaBase(rails);
+  const ns="http://www.w3.org/2000/svg";
+  const puntos=rails.map((c,i)=>({x:COLS[i].x,y:yDe(c),c}));
+  const dur=VELOCIDADES[estado.velocidad];
+  let i=0;
+  function paso(){
+    if(miId!==animId) return;          // ha empezado otra animación: detenerse
+    if(i>=puntos.length){ estado.animando=false; return; }
+    // encender el punto actual
+    const p=puntos[i];
+    const dot=svg.querySelector(`circle[data-key="${COLS[i].x}_${p.c}"]`);
+    if(dot){ dot.setAttribute("fill","var(--corriente)"); dot.setAttribute("r","4.2"); }
+    // etiquetar el punto con la letra que lleva la corriente en esta etapa
+    const et=document.createElementNS(ns,"text");
+    // en la última columna (lámpara) la letra va a la izquierda para no salirse
+    const alaIzq = i===puntos.length-1;
+    et.setAttribute("x", p.x + (alaIzq ? -9 : 8));
+    et.setAttribute("y", p.y + 4);
+    et.setAttribute("fill", "#ffe08a");
+    et.setAttribute("font-size", "12");
+    et.setAttribute("font-weight", "700");
+    et.setAttribute("text-anchor", alaIzq ? "end" : "start");
+    et.textContent = chr(p.c);
+    svg.appendChild(et);
+    if(i>0){
+      const a=puntos[i-1], b=puntos[i];
+      const seg=document.createElementNS(ns,"line");
+      seg.setAttribute("x1",a.x); seg.setAttribute("y1",a.y);
+      seg.setAttribute("x2",a.x); seg.setAttribute("y2",a.y);
+      seg.setAttribute("stroke","var(--corriente)"); seg.setAttribute("stroke-width","2.5");
+      seg.setAttribute("stroke-linecap","round"); seg.setAttribute("opacity","0.95");
+      svg.appendChild(seg);
+      // animación del segmento creciendo
+      const t0=performance.now();
+      (function crecer(now){
+        if(miId!==animId) return;      // recorrido caducado: dejar de crecer
+        const k=Math.min(1,(now-t0)/dur);
+        seg.setAttribute("x2",a.x+(b.x-a.x)*k);
+        seg.setAttribute("y2",a.y+(b.y-a.y)*k);
+        if(k<1) requestAnimationFrame(crecer);
+      })(t0);
+    }
+    i++;
+    setTimeout(paso,dur);
+  }
+  estado.animando=true;
+  paso();
+}
+
+/* ---------------- PROCESAR UNA PULSACIÓN DE TECLA ---------------- */
+function procesarTecla(letra){
+  letra=letra.toUpperCase();
+  if(!/[A-Z]/.test(letra)) return;
+  // resaltar tecla
+  const tk=document.querySelector(`.tecla[data-l="${letra}"]`);
+  if(tk){ tk.classList.add("pulsada"); setTimeout(()=>tk.classList.remove("pulsada"),120); }
+
+  // 1) avanzar rotores ANTES de cifrar (mecanismo real)
+  const rotores=rotoresVivos();
+  const movidos=avanzar(rotores);
+  estado.pos=[rotores[0].pos,rotores[1].pos,rotores[2].pos];
+  if(movidos.izq) animarGiro(0); else pintarTambor(0,false);
+  if(movidos.cen) animarGiro(1); else pintarTambor(1,false);
+  if(movidos.der) animarGiro(2); else pintarTambor(2,false);
+
+  // 2) cifrar con la nueva posición
+  const plug=construirPlug();
+  const {salida,rails}=cifrarLetra(letra,rotores,REFLECTORES[estado.reflector],plug);
+
+  // 3) actualizar cajas de texto
+  $("#entrada").value += letra;
+  $("#salida").value  += salida;
+
+  // 4) encender lámpara
+  encenderLampara(salida);
+
+  // 5) animar recorrido eléctrico (cancela automáticamente el anterior)
+  animarRecorrido(rails);
+}
+let lamparaTimer=null;
+function encenderLampara(l){
+  document.querySelectorAll(".lampara.on").forEach(e=>e.classList.remove("on"));
+  const lp=document.querySelector(`.lampara[data-l="${l}"]`);
+  if(lp) lp.classList.add("on");
+  clearTimeout(lamparaTimer);
+  // se apaga sola al "soltar" (simula la bombilla)
+  lamparaTimer=setTimeout(()=>{ if(lp) lp.classList.remove("on"); }, 650);
+}
+
+/* ---------------- PANEL DE CONFIGURACIÓN ---------------- */
+function construirConfig(){
+  const cont=$("#rotorConfig"); cont.innerHTML="";
+  const etiquetas=["Izquierdo","Central","Derecho"];
+  for(let i=0;i<3;i++){
+    const col=document.createElement("div"); col.className="col";
+    col.innerHTML=`
+      <h4>${etiquetas[i]} (posición ${i+1})</h4>
+      <label class="campo">Rotor (Walze)
+        <select data-rotor="${i}">
+          ${Object.keys(ROTORES).map(r=>`<option value="${r}" ${estado.rotores[i]===r?"selected":""}>${r}</option>`).join("")}
+        </select>
+      </label>
+      <label class="campo" style="margin-top:6px">Anillo (Ringstellung)
+        <select data-ring="${i}">
+          ${[...ALFA].map((l,k)=>`<option value="${l}" ${estado.rings[i]===l?"selected":""}>${String(k+1).padStart(2,"0")} · ${l}</option>`).join("")}
+        </select>
+      </label>
+      <label class="campo" style="margin-top:6px">Posición inicial (Grundstellung)
+        <select data-grund="${i}">
+          ${[...ALFA].map(l=>`<option value="${l}" ${estado.grund[i]===l?"selected":""}>${l}</option>`).join("")}
+        </select>
+      </label>`;
+    cont.appendChild(col);
+  }
+  cont.querySelectorAll("[data-rotor]").forEach(s=>s.addEventListener("change",e=>{
+    const i=+e.target.dataset.rotor, nuevo=e.target.value, anterior=estado.rotores[i];
+    // Una máquina real solo tiene un ejemplar de cada rotor: no se puede repetir.
+    // Si el rotor elegido ya está en otra posición, los INTERCAMBIAMOS.
+    const j=estado.rotores.findIndex((r,k)=>r===nuevo && k!==i);
+    estado.rotores[i]=nuevo;
+    let msg="";
+    if(j!==-1){
+      estado.rotores[j]=anterior;      // el otro hueco recibe el rotor que había aquí
+      // reconstruir los selects para reflejar el intercambio
+      construirConfig();
+      msg=`El rotor ${nuevo} ya estaba en otra posición: se han intercambiado los rotores ${nuevo} y ${anterior}.`;
+    }
+    construirRotores();
+    $("#avisoRotores").textContent=msg;
+  }));
+  cont.querySelectorAll("[data-ring]").forEach(s=>s.addEventListener("change",e=>{
+    estado.rings[+e.target.dataset.ring]=e.target.value;
+  }));
+  cont.querySelectorAll("[data-grund]").forEach(s=>s.addEventListener("change",e=>{
+    const i=+e.target.dataset.grund; estado.grund[i]=e.target.value;
+    estado.pos[i]=ord(e.target.value); pintarTambor(i,true);
+  }));
+}
+$("#selReflector").addEventListener("change",e=>{ estado.reflector=e.target.value; $("#etqReflector").textContent="UKW-"+e.target.value; });
+
+/* ---------------- BOTONES Y CONTROLES ---------------- */
+// velocidad
+document.querySelectorAll(".velocidad button").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll(".velocidad button").forEach(x=>x.classList.remove("activo"));
+  b.classList.add("activo"); estado.velocidad=b.dataset.vel;
+}));
+// reiniciar posiciones a la Grundstellung configurada
+$("#btnReiniciarPos").addEventListener("click",()=>{
+  estado.pos=estado.grund.map(ord);
+  for(let i=0;i<3;i++) pintarTambor(i,true);
+});
+// Reiniciar TODO al estado inicial, sin recargar la página
+function reiniciarTodo(){
+  estado.rotores=["I","II","III"];
+  estado.rings=["A","A","A"];
+  estado.grund=["A","A","A"];
+  estado.pos=[0,0,0];
+  estado.reflector="B";
+  estado.plugPares=[];
+  estado.velocidad="normal";
+  claviSeleccion=null;
+  // controles de velocidad
+  document.querySelectorAll(".velocidad button").forEach(x=>x.classList.toggle("activo",x.dataset.vel==="normal"));
+  // cuadros de texto y avisos
+  ["#entrada","#salida","#msgEntrada","#msgSalida","#claveTexto","#spruchInput"].forEach(s=>$(s).value="");
+  ["#avisoClave","#avisoSpruch","#avisoRotores","#avisoClavijero","#avisoTest"].forEach(s=>$(s).textContent="");
+  $("#avisoMsg").style.color="var(--texto2)";
+  $("#avisoMsg").textContent="El proceso empieza siempre desde la posición inicial (Grundstellung) de la clave. Para descifrar, aplica la misma clave y procesa el texto cifrado.";
+  $("#selReflector").value="B"; $("#etqReflector").textContent="UKW-B";
+  $("#selNumIdioma").value="de";
+  // reconstruir la máquina
+  construirConfig(); construirRotores(); construirClavijero();
+  // apagar lámparas y limpiar el recorrido
+  document.querySelectorAll(".lampara.on").forEach(e=>e.classList.remove("on"));
+  animId++; estado.animando=false; dibujarEsquemaBase([]);
+  // reiniciar el tutorial al primer paso
+  tut={i:0,indicador:"",cripto:""}; renderPaso();
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+$("#btnReiniciarTodo").addEventListener("click",reiniciarTodo);
+// limpiar texto
+$("#btnLimpiarTexto").addEventListener("click",()=>{ $("#entrada").value=""; $("#salida").value=""; });
+// borrar el recorrido eléctrico: cancela la animación en curso y deja el esquema vacío
+$("#btnBorrarRecorrido").addEventListener("click",()=>{
+  animId++;                 // caduca cualquier animación en curso
+  estado.animando=false;
+  dibujarEsquemaBase([]);   // esquema limpio, solo los puntos de fondo
+});
+// autocomprobación del caso conocido
+$("#btnAutotest").addEventListener("click",()=>{
+  const rot=[crearRotor("I","A","A"),crearRotor("II","A","A"),crearRotor("III","A","A")];
+  const plug=[...Array(26).keys()];
+  let out="";
+  for(const ch of "AAAAA"){ avanzar(rot); out+=cifrarLetra(ch,rot,REFLECTORES.B,plug).salida; }
+  const ok = out==="BDZGO";
+  $("#avisoTest").style.color = ok ? "var(--ok)" : "var(--corriente)";
+  $("#avisoTest").textContent = `Resultado: ${out} — ${ok?"✔ correcto (coincide con BDZGO)":"✘ ERROR"}`;
+});
+// modo demostración: teclea un mensaje automáticamente
+let demoActiva=false;
+$("#btnDemo").addEventListener("click",()=>{
+  if(demoActiva) return;
+  // reiniciar a un estado claro para la demo
+  estado.rotores=["I","II","III"]; estado.rings=["A","A","A"]; estado.grund=["A","A","A"];
+  estado.pos=[0,0,0]; estado.reflector="B"; estado.plugPares=[["A","M"],["F","I"],["N","V"]];
+  $("#selReflector").value="B";
+  construirConfig(); construirRotores(); construirClavijero();
+  $("#entrada").value=""; $("#salida").value="";
+  const mensaje="ENIGMAENELAULA";
+  demoActiva=true; $("#btnDemo").textContent="… demostrando";
+  let k=0;
+  const retardo=Math.max(VELOCIDADES[estado.velocidad]*13, 900);
+  (function siguiente(){
+    if(k>=mensaje.length){ demoActiva=false; $("#btnDemo").textContent="▶ Modo demostración"; return; }
+    procesarTecla(mensaje[k]); k++;
+    setTimeout(siguiente, retardo);
+  })();
+});
+
+/* ---------------- CIFRAR / DESCIFRAR UN MENSAJE COMPLETO ----------------
+   Empieza SIEMPRE desde la posición inicial (Grundstellung) de la clave.
+   Como el reflector hace la Enigma recíproca, procesar el texto cifrado con
+   la misma clave devuelve el texto claro: eso ES descifrar. */
+function cifrarTexto(texto){
+  const rot=[
+    Object.assign(crearRotor(estado.rotores[0],estado.rings[0],"A"),{pos:ord(estado.grund[0])}),
+    Object.assign(crearRotor(estado.rotores[1],estado.rings[1],"A"),{pos:ord(estado.grund[1])}),
+    Object.assign(crearRotor(estado.rotores[2],estado.rings[2],"A"),{pos:ord(estado.grund[2])}),
+  ];
+  const plug=construirPlug();
+  let out="";
+  for(const ch of texto.toUpperCase()){
+    if(ch>="A" && ch<="Z"){ avanzar(rot); out+=cifrarLetra(ch,rot,REFLECTORES[estado.reflector],plug).salida; }
+  }
+  return out;
+}
+/* Convierte un texto normal (con números, signos y acentos) al formato que
+   admitía la Enigma: solo A-Z. Sigue las convenciones históricas alemanas.
+   - Cada cifra se deletrea como palabra (0-9).
+   - La X hace de separador de palabras y de punto (.).  La Y hace de coma.
+   - Acentos y caracteres especiales se transliteran (Ä→AE, Ö→OE, Ü→UE, ß→SS,
+     vocales acentuadas → vocal simple, Ñ→NY).
+   Nota: los números se deletrean cifra a cifra (15 → EINS FUENF), variante
+   sencilla y válida de la práctica real. */
+function prepararTextoEnigma(texto, idioma){
+  const num = idioma==="es"
+    ? ["CERO","UNO","DOS","TRES","CUATRO","CINCO","SEIS","SIETE","OCHO","NUEVE"]
+    : ["NULL","EINS","ZWEI","DREI","VIER","FUENF","SECHS","SIEBEN","ACHT","NEUN"];
+  const trans = {
+    "Á":"A","À":"A","Â":"A","Ä":"AE","Ã":"A",
+    "É":"E","È":"E","Ê":"E","Ë":"E",
+    "Í":"I","Ì":"I","Î":"I","Ï":"I",
+    "Ó":"O","Ò":"O","Ô":"O","Ö":"OE","Õ":"O",
+    "Ú":"U","Ù":"U","Û":"U","Ü":"UE",
+    "Ñ":"NY","Ç":"C","ß":"SS"
+  };
+  let s = texto.toUpperCase();
+  s = s.replace(/[ÁÀÂÄÃÉÈÊËÍÌÎÏÓÒÔÖÕÚÙÛÜÑÇ]/g, c=>trans[c]||c); // acentos/umlauts
+  s = s.replace(/[0-9]/g, d=>" "+num[+d]+" ");                 // cifras -> palabras
+  s = s.replace(/,/g, " Y ");                                  // coma -> Y
+  s = s.replace(/[.;:!¡?¿()\-\/"'«»]/g, " X ");                // puntuación -> X
+  s = s.replace(/[^A-Z ]/g, "");                               // descartar lo demás
+  s = s.trim().replace(/\s+/g, "X");                           // espacios -> X (separador)
+  return s;
+}
+// Agrupa el texto en bloques de 5 letras, como en los mensajes militares reales.
+// Solo se usa para MOSTRAR el texto cifrado; el texto claro se deja sin agrupar
+// para que se lea bien (p. ej. SUSANA, no "SUSAN A").
+function agrupar5(s){ return (s.match(/.{1,5}/g)||[]).join(" "); }
+
+// Preparar el texto de entrada al formato Enigma (números, signos, acentos)
+$("#btnPreparar").addEventListener("click",()=>{
+  const original=$("#msgEntrada").value;
+  const preparado=prepararTextoEnigma(original, $("#selNumIdioma").value);
+  $("#msgEntrada").value=preparado;
+  $("#avisoMsg").style.color="var(--texto2)";
+  $("#avisoMsg").textContent="Texto convertido al formato Enigma (solo A-Z). Ahora pulsa «Procesar» para cifrarlo.";
+});
+// Leer un resultado sustituyendo la X (separador/punto) por espacios
+$("#btnInterpretar").addEventListener("click",()=>{
+  const t=$("#msgSalida").value || $("#msgEntrada").value;
+  $("#msgSalida").value = t.replace(/X/g," ").replace(/ +/g," ").trim();
+  $("#avisoMsg").style.color="var(--texto2)";
+  $("#avisoMsg").textContent="Cada X se ha mostrado como espacio para leer mejor. Las cifras siguen deletreadas (EINS, ZWEI…).";
+});
+
+$("#btnProcesar").addEventListener("click",()=>{
+  const entrada=$("#msgEntrada").value;
+  const salida=cifrarTexto(entrada);
+  // Salida en crudo (sin espacios): así el descifrado se lee tal cual.
+  $("#msgSalida").value=salida;
+  $("#avisoMsg").style.color="var(--texto2)";
+  $("#avisoMsg").textContent="Procesado desde la Grundstellung "+estado.grund.join("")+". Aplica la MISMA clave al resultado para recuperar el original.";
+});
+// Demostración ida y vuelta: cifra y vuelve a cifrar para probar que se recupera el original
+$("#btnDemoDescifrar").addEventListener("click",()=>{
+  let claro=($("#msgEntrada").value||"ATAQUEALAMANECER").toUpperCase().replace(/[^A-Z]/g,"");
+  if(!claro) claro="ATAQUEALAMANECER";
+  $("#msgEntrada").value=claro;
+  const cifrado=cifrarTexto(claro);        // ida: texto claro -> cifrado
+  const recuperado=cifrarTexto(cifrado);   // vuelta: cifrado -> claro (misma clave)
+  // El cifrado se muestra agrupado en 5 (estilo militar); claro y descifrado, en crudo.
+  $("#msgSalida").value="CLARO:      "+claro+"\nCIFRADO:    "+agrupar5(cifrado)+"\nDESCIFRADO: "+recuperado;
+  const ok=recuperado===claro;
+  $("#avisoMsg").style.color= ok ? "var(--ok)":"var(--corriente)";
+  $("#avisoMsg").textContent= ok
+    ? "✔ El texto descifrado coincide con el original: la misma clave cifra y descifra gracias al reflector."
+    : "✘ No coincide (revisa la clave).";
+});
+
+/* ---------------- CLAVE DEL DÍA (Tagesschlüssel) ---------------- */
+// Escribe la configuración actual de la máquina como una clave legible
+function leerClave(){
+  // La clave del DÍA no incluye la posición inicial (esa es la clave del mensaje).
+  const pares=estado.plugPares.map(p=>p.join("")).join(" ");
+  return `Rotores: ${estado.rotores.join(" ")}; Anillos: ${estado.rings.join("")}; `+
+         `Reflector: ${estado.reflector}; Clavijero: ${pares}`;
+}
+// Genera una clave del día aleatoria y VÁLIDA (3 rotores distintos de 5, 10 cables)
+function generarClave(){
+  // 3 rotores distintos de los 5 disponibles, en orden aleatorio
+  const disp=Object.keys(ROTORES).slice();               // [I,II,III,IV,V]
+  for(let i=disp.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[disp[i],disp[j]]=[disp[j],disp[i]];}
+  estado.rotores=disp.slice(0,3);
+  // anillos y posiciones iniciales aleatorias
+  const rndL=()=>chr(Math.floor(Math.random()*26));
+  estado.rings=[rndL(),rndL(),rndL()];
+  // La posición inicial NO forma parte de la clave del día: es la "clave del mensaje"
+  // (Spruchschlüssel) que el operador elegía para CADA mensaje. La dejamos en AAA.
+  estado.grund=["A","A","A"];
+  estado.pos=[0,0,0];
+  // reflector aleatorio
+  estado.reflector=Math.random()<0.5?"B":"C";
+  // 10 cables: barajamos el alfabeto y emparejamos las 20 primeras letras
+  const letras=[...ALFA];
+  for(let i=letras.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[letras[i],letras[j]]=[letras[j],letras[i]];}
+  estado.plugPares=[];
+  for(let i=0;i<10;i++) estado.plugPares.push([letras[2*i],letras[2*i+1]]);
+  aplicarEstadoAInterfaz();
+  $("#claveTexto").value=leerClave();
+  $("#avisoClave").style.color="var(--ok)";
+  $("#avisoClave").textContent="Clave del día generada y aplicada (posición en AAA). Ahora elige la clave del mensaje.";
+}
+// Clave del MENSAJE (Spruchschlüssel): enclava los 3 rotores en la posición indicada
+function enclavarMensaje(txt){
+  const s=(txt||"").toUpperCase().replace(/[^A-Z]/g,"");
+  if(s.length!==3){
+    $("#avisoSpruch").style.color="var(--corriente)";
+    $("#avisoSpruch").textContent="Escribe exactamente 3 letras, una por rotor (p. ej. RDC).";
+    return;
+  }
+  estado.grund=[s[0],s[1],s[2]];
+  estado.pos=estado.grund.map(ord);
+  for(let i=0;i<3;i++){
+    pintarTambor(i,true);
+    const sel=document.querySelector(`[data-grund="${i}"]`); if(sel) sel.value=estado.grund[i];
+  }
+  $("#spruchInput").value=s;
+  $("#avisoSpruch").style.color="var(--ok)";
+  $("#avisoSpruch").textContent=`Rotores enclavados en ${s} (izquierdo=${s[0]}, central=${s[1]}, derecho=${s[2]}).`;
+}
+// Vuelca 'estado' en todos los controles y paneles visuales
+function aplicarEstadoAInterfaz(){
+  $("#selReflector").value=estado.reflector;
+  $("#etqReflector").textContent="UKW-"+estado.reflector;
+  construirConfig();
+  construirRotores();
+  construirClavijero();
+  $("#avisoRotores").textContent="";
+}
+// Interpreta una clave escrita a mano (tolerante con mayúsculas/espacios)
+function aplicarClave(txt){
+  try{
+    const get=re=>{const m=txt.match(re);return m?m[1].trim():null;};
+    const rotStr=get(/Rotores?\s*:\s*([IVX\s]+?)(?:;|Anillos|Posicion|Posición|Reflector|Clavijero|$)/i);
+    const rings =get(/Anillos?\s*:\s*([A-Za-z]{3})/i);
+    const pos   =get(/Posici[oó]n\s*:\s*([A-Za-z]{3})/i);
+    const refl  =get(/Reflector\s*:\s*([BC])/i);
+    const plug  =get(/Clavijero\s*:\s*([A-Za-z\s]*)$/i);
+    if(rotStr){
+      const rs=rotStr.toUpperCase().split(/\s+/).filter(Boolean);
+      if(rs.length!==3) throw "Debes indicar 3 rotores.";
+      if(new Set(rs).size!==3) throw "Los 3 rotores deben ser distintos.";
+      rs.forEach(r=>{if(!ROTORES[r]) throw "Rotor desconocido: "+r;});
+      estado.rotores=rs;
+    }
+    if(rings){ estado.rings=[...rings.toUpperCase()]; }
+    if(pos){ estado.grund=[...pos.toUpperCase()]; estado.pos=estado.grund.map(ord); }
+    if(refl){ estado.reflector=refl.toUpperCase(); }
+    if(plug!==null){
+      const pares=plug.toUpperCase().match(/[A-Z]{2}/g)||[];
+      if(pares.length>10) throw "Máximo 10 cables en el clavijero.";
+      const usadas=new Set();
+      pares.forEach(p=>{
+        if(p[0]===p[1]) throw "Un cable no puede unir una letra consigo misma: "+p;
+        if(usadas.has(p[0])||usadas.has(p[1])) throw "Una letra no puede tener dos cables: "+p;
+        usadas.add(p[0]); usadas.add(p[1]);
+      });
+      estado.plugPares=pares.map(p=>[p[0],p[1]]);
+    }
+    aplicarEstadoAInterfaz();
+    $("#avisoClave").style.color="var(--ok)";
+    $("#avisoClave").textContent="Clave aplicada correctamente.";
+  }catch(err){
+    $("#avisoClave").style.color="var(--corriente)";
+    $("#avisoClave").textContent="No se pudo aplicar la clave: "+err;
+  }
+}
+$("#btnGenerarClave").addEventListener("click",generarClave);
+$("#btnLeerClave").addEventListener("click",()=>{ $("#claveTexto").value=leerClave(); $("#avisoClave").style.color="var(--texto2)"; $("#avisoClave").textContent="Clave del día actual de la máquina."; });
+$("#btnAplicarClave").addEventListener("click",()=>aplicarClave($("#claveTexto").value));
+$("#btnEnclavar").addEventListener("click",()=>enclavarMensaje($("#spruchInput").value));
+$("#spruchInput").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); enclavarMensaje($("#spruchInput").value);} });
+$("#btnSpruchAzar").addEventListener("click",()=>{ const r=()=>chr(Math.floor(Math.random()*26)); enclavarMensaje(r()+r()+r()); });
+
+// teclado físico del ordenador
+document.addEventListener("keydown",e=>{
+  if(e.repeat) return;
+  // Si el foco está en un campo EDITABLE (mensaje, clave del día, clave del
+  // mensaje…) NO tocamos la máquina: dejamos escribir con normalidad. Los campos
+  // de solo lectura (Entrada / Salida) sí operan la máquina, para que puedas
+  // hacer clic en «Entrada» y teclear como en un teclado real.
+  const t=e.target;
+  if(t && (t.tagName==="TEXTAREA" || t.tagName==="INPUT") && !t.readOnly && !t.disabled) return;
+  if(t && t.isContentEditable) return;
+  const l=e.key.toUpperCase();
+  if(/^[A-Z]$/.test(l) && !e.ctrlKey && !e.metaKey && !e.altKey){
+    e.preventDefault(); procesarTecla(l);
+  }
+});
+
+// redibujar cables si cambia el tamaño de la ventana (responsive)
+window.addEventListener("resize",()=>dibujarCables());
+
+/* ---------------- TUTORIAL / MISIÓN GUIADA ----------------
+   Guía paso a paso que reproduce el procedimiento real (1938-40): clave del
+   día + posición base, indicador doble (RDCRDC), cifrado del mensaje y toda la
+   fase de descifrado. Cada acción maneja la máquina de verdad reutilizando las
+   funciones ya existentes, así que el alumno ve cómo cambian los paneles. */
+const TUT_CLAVE="Rotores: II I III; Anillos: AAA; Reflector: B; Clavijero: AM FI NV KP LO QT";
+const TUT_MENSAJE="Angriff auf Kursk um 5 Uhr";
+let tut={i:0, indicador:"", cripto:""};
+
+const PASOS=[
+{fase:"emisor",titulo:"Tu misión",
+ texto:`Es 1939. Eres <b>criptógrafo</b> del ejército alemán y debes enviar por radio un mensaje al frente. Cualquiera puede escuchar la radio, así que lo ciframos con la <b>Enigma</b>: solo quien tenga la <b>misma máquina</b> y la <b>clave</b> podrá leerlo. Pulsa <b>Siguiente</b> para empezar.`},
+
+{fase:"emisor",titulo:"1) La clave del día (Tagesschlüssel)",
+ texto:`La hoja de claves de hoy ordena: <span class="tut-dato">Rotores II · I · III</span>, <span class="tut-dato">Anillos AAA</span>, <span class="tut-dato">Reflector B</span> y <span class="tut-dato">Clavijero AM FI NV KP LO QT</span>. Es igual para todos y para todo el día. Pulsa el botón para cargarla (o hazlo a mano en el panel «Clave del día»).`,
+ accionLabel:"Cargar clave del día",
+ accion:()=>{ $("#claveTexto").value=TUT_CLAVE; aplicarClave(TUT_CLAVE); return "✔ Clave del día cargada en la máquina."; }},
+
+{fase:"emisor",titulo:"2) La posición base del día",
+ texto:`La hoja fija también una <b>posición base</b> (Grundstellung) de partida: <span class="tut-dato">AAA</span>. Con ella ciframos SOLO la clave del mensaje. Pulsa para girar los tres rotores a AAA.`,
+ accionLabel:"Poner rotores en AAA",
+ accion:()=>{ enclavarMensaje("AAA"); return "✔ Rotores en la base del día: AAA."; }},
+
+{fase:"emisor",titulo:"3) Eliges tu clave de mensaje",
+ texto:`Para <b>este</b> mensaje inventas tres letras al azar: <span class="tut-dato">R D C</span>. Serán la posición inicial de los rotores para el texto. El receptor aún no las conoce, así que hay que enviárselas cifradas... y, según el reglamento de la época, se <b>repiten</b>: <span class="tut-dato">RDCRDC</span>. (Aquí está la semilla del fallo que verás al final.)`},
+
+{fase:"emisor",titulo:"4) Ciframos el indicador (RDCRDC)",
+ texto:`Con la máquina en la base <b>AAA</b>, tecleamos <span class="tut-dato">RDCRDC</span>. El resultado es el <b>indicador</b> y viajará al principio del mensaje. Pulsa para cifrarlo.`,
+ accionLabel:"Cifrar RDCRDC",
+ accion:()=>{ enclavarMensaje("AAA"); tut.indicador=cifrarTexto("RDCRDC"); $("#msgEntrada").value="RDCRDC"; $("#msgSalida").value=tut.indicador; return "Indicador = "+tut.indicador+"\n(Aunque RDC se repite, las 6 letras salen distintas: los rotores giran entre letra y letra.)"; }},
+
+{fase:"emisor",titulo:"5) Enclavas tu clave de mensaje",
+ texto:`Ahora giras los rotores a tu clave <span class="tut-dato">RDC</span>: izquierdo en R, central en D, derecho en C. Desde aquí ciframos el mensaje de verdad. Pulsa para enclavar RDC.`,
+ accionLabel:"Enclavar RDC",
+ accion:()=>{ enclavarMensaje("RDC"); return "✔ Rotores enclavados en RDC. Listos para el mensaje."; }},
+
+{fase:"emisor",titulo:"6) Escribes y ciframos el mensaje",
+ texto:`Tu mensaje al frente es:<br><b>«Angriff auf Kursk um 5 Uhr»</b> (Ataque sobre Kursk a las 5 h).<br>Como la Enigma solo tiene letras, primero lo pasamos a formato Enigma (números deletreados, X de separador) y lo ciframos desde RDC. Pulsa para hacerlo.`,
+ accionLabel:"Preparar y cifrar el mensaje",
+ accion:()=>{ enclavarMensaje("RDC"); const prep=prepararTextoEnigma(TUT_MENSAJE,"de"); tut.cripto=cifrarTexto(prep); $("#msgEntrada").value=prep; $("#msgSalida").value=tut.cripto; return "Preparado:   "+prep+"\nCriptograma: "+agrupar5(tut.cripto); }},
+
+{fase:"emisor",titulo:"7) Transmites por radio",
+ texto:`Envías dos grupos seguidos: el <b>indicador</b> (tu clave de mensaje cifrada) y el <b>criptograma</b>. Esto es todo lo que sale por las ondas. ¡Apúntalo: lo necesitará el receptor!`,
+ accionLabel:"Ver la transmisión",
+ accion:()=>{ return "📡 TRANSMISIÓN:\nIndicador:   "+(tut.indicador||"(cifra antes el paso 4)")+"\nCriptograma: "+(tut.cripto?agrupar5(tut.cripto):"(cifra antes el paso 6)"); }},
+
+{fase:"receptor",titulo:"Cambias de bando: ahora eres el receptor",
+ texto:()=>`En el frente, otro operador recibe por radio el indicador <span class="tut-dato">${tut.indicador||"SCHPEK"}</span> y el criptograma <span class="tut-dato">${tut.cripto?agrupar5(tut.cripto):"..."}</span>. Tiene la <b>misma Enigma</b> y la <b>misma clave del día</b>. Vamos a descifrarlo.`},
+
+{fase:"receptor",titulo:"8) Descifras el indicador",
+ texto:`Pones la clave del día y la base <b>AAA</b>, y tecleas el indicador de 6 letras. Como la Enigma es recíproca, saldrá <span class="tut-dato">RDCRDC</span>: ¡la clave del mensaje era <b>RDC</b>! Pulsa para descifrarlo.`,
+ accionLabel:"Descifrar el indicador",
+ accion:()=>{ aplicarClave(TUT_CLAVE); enclavarMensaje("AAA"); const ind=tut.indicador||"SCHPEK"; const r=cifrarTexto(ind); $("#msgEntrada").value=ind; $("#msgSalida").value=r; return "Indicador "+ind+" → "+r+"\nLos 3 primeros = RDC → esa es la clave del mensaje."; }},
+
+{fase:"receptor",titulo:"9) Descifras el mensaje",
+ texto:`Enclavas los rotores en <span class="tut-dato">RDC</span> y tecleas el criptograma. Saldrá el texto en formato Enigma. Pulsa para descifrarlo.`,
+ accionLabel:"Enclavar RDC y descifrar",
+ accion:()=>{ enclavarMensaje("RDC"); const c=tut.cripto||cifrarTexto(prepararTextoEnigma(TUT_MENSAJE,"de")); const claro=cifrarTexto(c); $("#msgEntrada").value=c; $("#msgSalida").value=claro; return "Texto Enigma: "+claro; }},
+
+{fase:"receptor",titulo:"10) Lo lees como humano",
+ texto:`Solo falta interpretar: cada <b>X</b> es un espacio y las palabras-número vuelven a ser cifras. Pulsa para leerlo.`,
+ accionLabel:"Leer el mensaje",
+ accion:()=>{ const c=tut.cripto||cifrarTexto(prepararTextoEnigma(TUT_MENSAJE,"de")); enclavarMensaje("RDC"); const claro=cifrarTexto(c); const leido=claro.replace(/X/g," ").replace(/ +/g," ").trim(); $("#msgSalida").value=leido; return "📨 MENSAJE RECIBIDO:\n"+leido+"\n(= «Angriff auf Kursk um 5 Uhr»)"; }},
+
+{fase:"final",titulo:"Misión cumplida — y la grieta secreta",
+ texto:`¡Has cifrado y descifrado como un operador real! Un último detalle: repetir la clave (RDCRDC) parecía más seguro, pero dejó una <b>huella</b>: la letra 1 y la 4 del indicador salían de la misma letra, igual que la 2-5 y la 3-6. Reuniendo muchos mensajes del día, <b>Marian Rejewski</b> y el equipo polaco hallaron esa pauta y empezaron a <b>romper Enigma</b>. No falló la máquina, sino <b>cómo se usaba</b>.`,
+ accionLabel:"Ver el punto débil (1↔4, 2↔5, 3↔6)",
+ accion:()=>{ const ind=tut.indicador||"SCHPEK"; return "Indicador: "+ind+"\nParejas ocultas por repetir la clave:\n  "+ind[0]+" ↔ "+ind[3]+"   (las dos cifran una R)\n  "+ind[1]+" ↔ "+ind[4]+"   (las dos cifran una D)\n  "+ind[2]+" ↔ "+ind[5]+"   (las dos cifran una C)"; }},
+];
+
+function renderPaso(){
+  const p=PASOS[tut.i];
+  $("#tutNum").textContent=tut.i+1;
+  $("#tutTotal").textContent=PASOS.length;
+  $("#tutBarra").style.width=(tut.i/(PASOS.length-1)*100)+"%";
+  const f=$("#tutFase");
+  f.className="tut-fase fase-"+p.fase;
+  f.textContent = p.fase==="emisor"?"EMISOR (cifrar)":p.fase==="receptor"?"RECEPTOR (descifrar)":"CONCLUSIÓN";
+  $("#tutTitulo").textContent=p.titulo;
+  $("#tutTexto").innerHTML = (typeof p.texto==="function") ? p.texto() : p.texto;
+  const res=$("#tutResultado"); res.style.display="none"; res.textContent="";
+  const acc=$("#tutAccion");
+  if(p.accion){ acc.style.display=""; acc.textContent=p.accionLabel||"Hacer"; acc.onclick=()=>{ const out=p.accion(); if(out){res.style.display="";res.textContent=out;} }; }
+  else acc.style.display="none";
+  $("#tutPrev").disabled = tut.i===0;
+  $("#tutNext").disabled = tut.i===PASOS.length-1;
+}
+$("#tutPrev").addEventListener("click",()=>{ if(tut.i>0){tut.i--;renderPaso();} });
+$("#tutNext").addEventListener("click",()=>{ if(tut.i<PASOS.length-1){tut.i++;renderPaso();} });
+$("#tutReiniciar").addEventListener("click",()=>{ tut={i:0,indicador:"",cripto:""}; renderPaso(); });
+renderPaso();
+
+/* ---------------- ARRANQUE ---------------- */
+construirConfig();
+construirRotores();
+construirClavijero();
+dibujarEsquemaBase([0,0,0,0,0,0,0,0,0,0,0,0]);   // esquema vacío inicial
+</script>
+</body>
+</html>
