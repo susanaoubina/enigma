@@ -43,7 +43,7 @@ La **ficha en PDF** propone una misión completa (cifrar y descifrar un mensaje 
 
 ## 👩‍🏫 Créditos
 
-Creado por **Susana Oubiña Falcón** con ayuda de Claude · Material educativo para el aula de Tecnología.
+Creado por **Susana Oubiña Falcón** y Claude Opus 4.8 · Material educativo para el aula de Tecnología o la materia de IA para la Sociedad
 
 ## 📝 Nota técnica
 
