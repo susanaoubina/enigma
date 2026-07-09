@@ -204,7 +204,9 @@
   .rotor-config .col h4{margin:0 0 6px;color:var(--laton);font-size:12px;}
 
   /* ---------- Cajas de texto ---------- */
-  .io{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .io{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start;}
+  /* encabezado de altura fija para que Entrada y Salida queden alineadas */
+  .io-cab{display:block;min-height:34px;margin-bottom:4px;line-height:1.25;}
   .io .campo textarea{
     width:100%;min-height:70px;resize:vertical;background:#0e0b07;color:var(--texto);
     border:1px solid var(--laton);border-radius:6px;padding:8px;font-size:16px;
@@ -377,10 +379,10 @@
     <span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span><span class="tornillo"></span>
     <div class="titulo-bloque">Texto</div>
     <div class="io">
-      <label class="campo">Entrada <small style="color:var(--texto2)">(haz clic aquí y teclea: es el teclado de la máquina)</small>
+      <label class="campo"><span class="io-cab">Entrada <small style="color:var(--texto2)">(haz clic aquí y teclea: es el teclado de la máquina)</small></span>
         <textarea id="entrada" readonly placeholder="Haz clic aquí y teclea con tu teclado..."></textarea>
       </label>
-      <label class="campo">Salida (cifrado / descifrado)
+      <label class="campo"><span class="io-cab">Salida (cifrado / descifrado) <small style="color:var(--texto2)">(se enciende también la lámpara)</small></span>
         <textarea id="salida" readonly placeholder="Resultado letra a letra..."></textarea>
       </label>
     </div>
